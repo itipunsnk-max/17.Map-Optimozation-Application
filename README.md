@@ -13,6 +13,7 @@
 - SQLite cache สำหรับระยะทาง เวลา และ geometry
 - สร้าง Excel, GeoJSON และ Folium/Leaflet HTML map
 - Streamlit GUI พร้อม KPI, filters, map และ download buttons
+- Next.js/TypeScript web dashboard สำหรับเปิดดูแผนที่บน Vercel
 - มี Branch Level และ Province Level analysis
 
 ## Architecture
@@ -30,6 +31,33 @@ Excel
 โค้ดหลักอยู่ใน `src/` และแยก business logic ออกจาก Streamlit เพื่อให้ใช้ซ้ำผ่าน CLI และการทดสอบได้
 
 ดูแผนภาพ Mermaid สำหรับ flow การทำงาน, location decision, routing/cache sequence, program structure และ output audit ได้ที่ [`docs/architecture.md`](docs/architecture.md)
+
+## Web map สำหรับ Vercel
+
+โฟลเดอร์ `web/` เป็น visualization layer แบบ Next.js/TypeScript แยกจาก calculation engine ของ Python หน้าเว็บเปิดพร้อมแผนที่ประเทศไทยและข้อมูล Offline Demo ทันที โดยแสดง Branch → Hub routes, KPI, filters, popup audit details และตารางเรียงระยะทาง
+
+หน้าเว็บรับผลลัพธ์จาก Python ได้สองรูปแบบ:
+
+- `output/routes.geojson`: แสดง route geometry ที่ export จาก routing provider โดยตรง
+- `output/route_results.xlsx`: สร้างเส้นตรงสำหรับการมองภาพรวมจากพิกัดสาขาไป Hub และระบุ `Geometry_Source` ว่าเป็น display line
+
+เริ่ม web dashboard ในเครื่อง:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+Production build:
+
+```powershell
+cd web
+npm ci
+npm run build
+```
+
+เมื่อตั้ง Vercel project ให้กำหนด Root Directory เป็น `web` ไม่ต้องใส่ `ORS_API_KEY` ใน frontend เพราะ web dashboard อ่านเฉพาะไฟล์ผลลัพธ์ ส่วนการเรียก ORS และเก็บ cache ยังคงทำใน Python engine เพื่อไม่เปิดเผย API key และรักษา audit flow เดิม
 
 ## Installation (Windows 10/11)
 

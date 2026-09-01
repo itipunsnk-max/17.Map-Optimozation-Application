@@ -2,6 +2,25 @@
 
 เอกสารนี้อธิบาย flow การทำงานและโครงสร้างของ Thailand Branch Routing Analysis ด้วย Mermaid โดยแผนภาพจะแสดงลำดับตั้งแต่รับ Excel จนถึง export ผลลัพธ์
 
+## 0. Hybrid deployment overview
+
+```mermaid
+flowchart LR
+    INPUT[Branches + Regional Hubs Excel] --> PY[Python routing engine]
+    ORS[OpenRouteService] <--> PY
+    CACHE[(SQLite cache)] <--> PY
+    PY --> XLSX[route_results.xlsx]
+    PY --> GEO[routes.geojson]
+    PY --> HTML[route_map.html]
+    XLSX --> WEB[Next.js + TypeScript dashboard]
+    GEO --> WEB
+    WEB --> MAP[Leaflet + OpenStreetMap]
+    WEB --> VERCEL[Vercel deployment]
+    MAP --> DECISION[TOR audit / service-area review / planning]
+```
+
+Python เป็น calculation and audit layer ส่วน TypeScript เป็น visualization layer จึงไม่ต้องย้าย ORS key, SQLite cache หรือ business rules ไปไว้ใน browser
+
 ## 1. End-to-end application flow
 
 ```mermaid

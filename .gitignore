@@ -1,8 +1,14 @@
 .env
+.env.local
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .test-tmp/
+.vercel/
+web/.next/
+web/.npm-cache/
+web/node_modules/
+web/*.tsbuildinfo
 pytest-cache-files-*/
 .mypy_cache/
 .ruff_cache/
