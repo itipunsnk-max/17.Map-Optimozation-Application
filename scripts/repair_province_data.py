@@ -1,0 +1,110 @@
+"""Repair/write the UTF-8 Thai province column using ASCII-safe Unicode escapes."""
+
+from __future__ import annotations
+
+import csv
+from pathlib import Path
+
+
+def decode(value: str) -> str:
+    return value.encode("ascii").decode("unicode_escape")
+
+
+THAI_BY_CODE = {
+    "BKK": r"\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e\u0e21\u0e2b\u0e32\u0e19\u0e04\u0e23",
+    "KBI": r"\u0e01\u0e23\u0e30\u0e1a\u0e35\u0e48",
+    "KRI": r"\u0e01\u0e32\u0e0d\u0e08\u0e19\u0e1a\u0e38\u0e23\u0e35",
+    "KSN": r"\u0e01\u0e32\u0e2c\u0e2a\u0e34\u0e19\u0e18\u0e38\u0e4c",
+    "KPT": r"\u0e01\u0e33\u0e41\u0e1e\u0e07\u0e40\u0e1e\u0e0a\u0e23",
+    "KKN": r"\u0e02\u0e2d\u0e19\u0e41\u0e01\u0e48\u0e19",
+    "CTI": r"\u0e08\u0e31\u0e19\u0e17\u0e1a\u0e38\u0e23\u0e35",
+    "CCO": r"\u0e09\u0e30\u0e40\u0e0a\u0e34\u0e07\u0e40\u0e17\u0e23\u0e32",
+    "CBI": r"\u0e0a\u0e25\u0e1a\u0e38\u0e23\u0e35",
+    "CNT": r"\u0e0a\u0e31\u0e22\u0e19\u0e32\u0e17",
+    "CPM": r"\u0e0a\u0e31\u0e22\u0e20\u0e39\u0e21\u0e34",
+    "CPN": r"\u0e0a\u0e38\u0e21\u0e1e\u0e23",
+    "TRG": r"\u0e15\u0e23\u0e31\u0e07",
+    "TRT": r"\u0e15\u0e23\u0e32\u0e14",
+    "TAK": r"\u0e15\u0e32\u0e01",
+    "NYK": r"\u0e19\u0e04\u0e23\u0e19\u0e32\u0e22\u0e01",
+    "NPT": r"\u0e19\u0e04\u0e23\u0e1b\u0e10\u0e21",
+    "NPM": r"\u0e19\u0e04\u0e23\u0e1e\u0e19\u0e21",
+    "NMA": r"\u0e19\u0e04\u0e23\u0e23\u0e32\u0e0a\u0e2a\u0e35\u0e21\u0e32",
+    "NST": r"\u0e19\u0e04\u0e23\u0e28\u0e23\u0e35\u0e18\u0e23\u0e23\u0e21\u0e23\u0e32\u0e0a",
+    "NSW": r"\u0e19\u0e04\u0e23\u0e2a\u0e27\u0e23\u0e23\u0e04\u0e4c",
+    "NBI": r"\u0e19\u0e19\u0e17\u0e1a\u0e38\u0e23\u0e35",
+    "NWT": r"\u0e19\u0e23\u0e32\u0e18\u0e34\u0e27\u0e32\u0e2a",
+    "NAN": r"\u0e19\u0e48\u0e32\u0e19",
+    "BKN": r"\u0e1a\u0e36\u0e07\u0e01\u0e32\u0e2c",
+    "BRM": r"\u0e1a\u0e38\u0e23\u0e35\u0e23\u0e31\u0e21\u0e22\u0e4c",
+    "PTE": r"\u0e1b\u0e17\u0e38\u0e21\u0e18\u0e32\u0e19\u0e35",
+    "PKN": r"\u0e1b\u0e23\u0e30\u0e08\u0e27\u0e1a\u0e04\u0e35\u0e23\u0e35\u0e02\u0e31\u0e19\u0e18\u0e4c",
+    "PRI": r"\u0e1b\u0e23\u0e32\u0e08\u0e35\u0e19\u0e1a\u0e38\u0e23\u0e35",
+    "PTN": r"\u0e1b\u0e31\u0e15\u0e15\u0e32\u0e19\u0e35",
+    "PYO": r"\u0e1e\u0e30\u0e40\u0e22\u0e32",
+    "PNA": r"\u0e1e\u0e31\u0e07\u0e07\u0e32",
+    "PLG": r"\u0e1e\u0e31\u0e17\u0e25\u0e38\u0e07",
+    "PCT": r"\u0e1e\u0e34\u0e08\u0e34\u0e15\u0e23",
+    "PHS": r"\u0e1e\u0e34\u0e29\u0e13\u0e38\u0e42\u0e25\u0e01",
+    "PKT": r"\u0e20\u0e39\u0e40\u0e01\u0e47\u0e15",
+    "MKM": r"\u0e21\u0e2b\u0e32\u0e2a\u0e32\u0e23\u0e04\u0e32\u0e21",
+    "MDH": r"\u0e21\u0e38\u0e01\u0e14\u0e32\u0e2b\u0e32\u0e23",
+    "YLA": r"\u0e22\u0e30\u0e25\u0e32",
+    "YST": r"\u0e22\u0e42\u0e2a\u0e18\u0e23",
+    "RET": r"\u0e23\u0e49\u0e2d\u0e22\u0e40\u0e2d\u0e47\u0e14",
+    "RNG": r"\u0e23\u0e30\u0e19\u0e2d\u0e07",
+    "RYG": r"\u0e23\u0e30\u0e22\u0e2d\u0e07",
+    "RBR": r"\u0e23\u0e32\u0e0a\u0e1a\u0e38\u0e23\u0e35",
+    "LRI": r"\u0e25\u0e1e\u0e1a\u0e38\u0e23\u0e35",
+    "LPG": r"\u0e25\u0e33\u0e1b\u0e32\u0e07",
+    "LPN": r"\u0e25\u0e33\u0e1e\u0e39\u0e19",
+    "SSK": r"\u0e28\u0e23\u0e35\u0e2a\u0e30\u0e40\u0e01\u0e29",
+    "SNK": r"\u0e2a\u0e01\u0e25\u0e19\u0e04\u0e23",
+    "SKA": r"\u0e2a\u0e07\u0e02\u0e25\u0e32",
+    "STN": r"\u0e2a\u0e15\u0e39\u0e25",
+    "SPK": r"\u0e2a\u0e21\u0e38\u0e17\u0e23\u0e1b\u0e23\u0e32\u0e01\u0e32\u0e23",
+    "SKM": r"\u0e2a\u0e21\u0e38\u0e17\u0e23\u0e2a\u0e07\u0e04\u0e23\u0e32\u0e21",
+    "SKN": r"\u0e2a\u0e21\u0e38\u0e17\u0e23\u0e2a\u0e32\u0e04\u0e23",
+    "SRI": r"\u0e2a\u0e23\u0e30\u0e1a\u0e38\u0e23\u0e35",
+    "SKW": r"\u0e2a\u0e23\u0e30\u0e41\u0e01\u0e49\u0e27",
+    "SBR": r"\u0e2a\u0e34\u0e07\u0e2b\u0e4c\u0e1a\u0e38\u0e23\u0e35",
+    "SPB": r"\u0e2a\u0e38\u0e1e\u0e23\u0e23\u0e13\u0e1a\u0e38\u0e23\u0e35",
+    "SNI": r"\u0e2a\u0e38\u0e23\u0e32\u0e29\u0e0e\u0e23\u0e4c\u0e18\u0e32\u0e19\u0e35",
+    "SRT": r"\u0e2a\u0e38\u0e23\u0e34\u0e19\u0e17\u0e23\u0e4c",
+    "STI": r"\u0e2a\u0e38\u0e42\u0e02\u0e17\u0e31\u0e22",
+    "NKI": r"\u0e2b\u0e19\u0e2d\u0e07\u0e04\u0e32\u0e22",
+    "NBP": r"\u0e2b\u0e19\u0e2d\u0e07\u0e1a\u0e31\u0e27\u0e25\u0e33\u0e20\u0e39",
+    "ACR": r"\u0e2d\u0e33\u0e19\u0e32\u0e08\u0e40\u0e08\u0e23\u0e34\u0e0d",
+    "UDN": r"\u0e2d\u0e38\u0e14\u0e23\u0e18\u0e32\u0e19\u0e35",
+    "UTT": r"\u0e2d\u0e38\u0e15\u0e23\u0e14\u0e34\u0e15\u0e16\u0e4c",
+    "UTH": r"\u0e2d\u0e38\u0e17\u0e31\u0e22\u0e18\u0e32\u0e19\u0e35",
+    "UBN": r"\u0e2d\u0e38\u0e1a\u0e25\u0e23\u0e32\u0e0a\u0e18\u0e32\u0e19\u0e35",
+    "ATG": r"\u0e2d\u0e48\u0e32\u0e07\u0e17\u0e2d\u0e07",
+    "CRI": r"\u0e40\u0e0a\u0e35\u0e22\u0e07\u0e23\u0e32\u0e22",
+    "CMI": r"\u0e40\u0e0a\u0e35\u0e22\u0e07\u0e43\u0e2b\u0e21\u0e48",
+    "PBI": r"\u0e40\u0e1e\u0e0a\u0e23\u0e1a\u0e38\u0e23\u0e35",
+    "PNB": r"\u0e40\u0e1e\u0e0a\u0e23\u0e1a\u0e39\u0e23\u0e13\u0e4c",
+    "LOE": r"\u0e40\u0e25\u0e22",
+    "PRE": r"\u0e41\u0e1e\u0e23\u0e48",
+    "MSN": r"\u0e41\u0e21\u0e48\u0e2e\u0e48\u0e2d\u0e07\u0e2a\u0e2d\u0e19",
+    "AYA": r"\u0e1e\u0e23\u0e30\u0e19\u0e04\u0e23\u0e28\u0e23\u0e35\u0e2d\u0e22\u0e38\u0e18\u0e22\u0e32",
+}
+
+
+def main() -> None:
+    path = Path(__file__).resolve().parents[1] / "data" / "thailand_provinces.csv"
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    if len(rows) != 77 or {row["Province_Code"] for row in rows} != set(THAI_BY_CODE):
+        raise RuntimeError("Province reference code set does not match the 77-row source data.")
+    for row in rows:
+        row["Province_TH"] = decode(THAI_BY_CODE[row["Province_Code"]])
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Wrote UTF-8 province data: {path}")
+
+
+if __name__ == "__main__":
+    main()
