@@ -1,35 +1,23 @@
 import type { RouteFeature, RouteFeatureCollection, RouteProperties } from "./types";
+import { provinceReference } from "./province-reference";
 
 type WorkbookRow = Record<string, unknown>;
-
-const inputProvinceCoordinates: Record<string, [number, number]> = {
-  "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e\u0e21\u0e2b\u0e32\u0e19\u0e04\u0e23": [13.7563, 100.5018],
-  "\u0e40\u0e0a\u0e35\u0e22\u0e07\u0e43\u0e2b\u0e21\u0e48": [18.7883, 98.9853],
-  "\u0e20\u0e39\u0e40\u0e01\u0e47\u0e15": [7.8804, 98.3923],
-  "\u0e2a\u0e07\u0e02\u0e25\u0e32": [7.1898, 100.5954],
-  "\u0e19\u0e04\u0e23\u0e2a\u0e27\u0e23\u0e23\u0e04\u0e4c": [15.703, 100.1372],
-  "\u0e2d\u0e38\u0e14\u0e23\u0e18\u0e32\u0e19\u0e35": [17.62, 102.7875],
-  "\u0e1b\u0e23\u0e30\u0e08\u0e27\u0e1a\u0e04\u0e35\u0e23\u0e35\u0e02\u0e31\u0e19\u0e18\u0e4c": [11.8126, 99.797],
-  "\u0e19\u0e04\u0e23\u0e1e\u0e19\u0e21": [17.392, 104.7696],
-  "\u0e19\u0e04\u0e23\u0e23\u0e32\u0e0a\u0e2a\u0e35\u0e21\u0e32": [14.9799, 102.0978],
-  "\u0e19\u0e04\u0e23\u0e28\u0e23\u0e35\u0e18\u0e23\u0e23\u0e21\u0e23\u0e32\u0e0a": [8.4304, 99.963],
-  "\u0e19\u0e19\u0e17\u0e1a\u0e38\u0e23\u0e35": [13.8621, 100.5144],
-  "\u0e19\u0e23\u0e32\u0e18\u0e34\u0e27\u0e32\u0e2a": [6.4264, 101.823],
-  "\u0e19\u0e48\u0e32\u0e19": [18.7756, 100.773],
-  "\u0e1a\u0e36\u0e07\u0e01\u0e32\u0e2c": [18.3609, 103.6464],
-  "\u0e1a\u0e38\u0e23\u0e35\u0e23\u0e31\u0e21\u0e22\u0e4c": [14.993, 103.1029],
-  "\u0e1b\u0e17\u0e38\u0e21\u0e18\u0e32\u0e19\u0e35": [14.0208, 100.525],
-  "\u0e1b\u0e23\u0e32\u0e08\u0e35\u0e19\u0e1a\u0e38\u0e23\u0e35": [14.05, 101.368],
-  "\u0e1b\u0e31\u0e15\u0e15\u0e32\u0e19\u0e35": [6.869, 101.2505],
-  "\u0e1e\u0e30\u0e40\u0e22\u0e32": [19.166, 99.9025],
-};
 
 const provinceAliases: Record<string, string> = {
   "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e": "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e\u0e21\u0e2b\u0e32\u0e19\u0e04\u0e23",
   "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e\u0e2f": "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e\u0e21\u0e2b\u0e32\u0e19\u0e04\u0e23",
-  bangkok: "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e\u0e21\u0e2b\u0e32\u0e19\u0e04\u0e23",
-  songkhla: "\u0e2a\u0e07\u0e02\u0e25\u0e32",
+  "\u0e2d\u0e22\u0e38\u0e18\u0e22\u0e32": "\u0e1e\u0e23\u0e30\u0e19\u0e04\u0e23\u0e28\u0e23\u0e35\u0e2d\u0e22\u0e38\u0e18\u0e22\u0e32",
 };
+
+const normalizeProvince = (value: unknown) => String(value ?? "").trim().toLowerCase()
+  .replace(/^\u0e08\u0e31\u0e07\u0e2b\u0e27\u0e31\u0e14\s*/, "")
+  .replace(/\s*province\s*$/, "")
+  .replace(/[\s_\-–—./()]+/g, "");
+
+const provinceCoordinates = new Map<string, [number, number]>(provinceReference.flatMap((province): [string, [number, number]][] => [
+  [normalizeProvince(province.thai), [province.latitude, province.longitude] as [number, number]],
+  [normalizeProvince(province.english), [province.latitude, province.longitude] as [number, number]],
+]));
 
 const numberFrom = (row: WorkbookRow, keys: string[]) => {
   for (const key of keys) {
@@ -47,15 +35,11 @@ const stringFrom = (row: WorkbookRow, keys: string[], fallback = "ไม่ร�
   return fallback;
 };
 
-const normalizeProvince = (value: unknown) => {
-  const normalized = String(value ?? "").trim().toLowerCase().replace(/^จังหวัด\s*/, "").replace(/[\s_\-–—./()]+/g, "");
-  return provinceAliases[normalized] ?? normalized;
-};
-
 const coordinateFrom = (row: WorkbookRow, province: string): [number, number] | undefined => {
   const latitude = numberFrom(row, ["Latitude"]);
   const longitude = numberFrom(row, ["Longitude"]);
-  return Number.isFinite(latitude) && Number.isFinite(longitude) ? [latitude, longitude] : inputProvinceCoordinates[normalizeProvince(province)];
+  const normalized = normalizeProvince(province);
+  return Number.isFinite(latitude) && Number.isFinite(longitude) ? [latitude, longitude] : provinceCoordinates.get(provinceAliases[normalized] ?? normalized);
 };
 
 const haversineKm = ([lat1, lon1]: [number, number], [lat2, lon2]: [number, number]) => {

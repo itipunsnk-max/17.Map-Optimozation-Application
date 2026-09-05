@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { type ChangeEvent, useMemo, useRef, useState } from "react";
 import { inputWorkbookToGeoJson, normalizeGeoJson, workbookRowsToGeoJson } from "@/lib/geojson";
+import { provinceReference } from "@/lib/province-reference";
 import { sampleRoutes } from "@/lib/sample-routes";
 import type { RouteFeatureCollection } from "@/lib/types";
 
@@ -13,6 +14,17 @@ const RouteMap = dynamic(() => import("./route-map"), {
 
 const ALL = "ทั้งหมด";
 
+const normalizeProvinceInput = (value: string) => {
+  const normalized = value.trim().toLowerCase().replace(/^จังหวัด\s*/, "").replace(/\s*province\s*$/, "").replace(/[\s_\-–—./()]+/g, "");
+  return ({ "กรุงเทพ": "กรุงเทพมหานคร", "กรุงเทพฯ": "กรุงเทพมหานคร" } as Record<string, string>)[normalized] ?? normalized;
+};
+
+const haversineKm = (latitude1: number, longitude1: number, latitude2: number, longitude2: number) => {
+  const radians = (value: number) => value * Math.PI / 180;
+  const a = Math.sin(radians(latitude2 - latitude1) / 2) ** 2 + Math.cos(radians(latitude1)) * Math.cos(radians(latitude2)) * Math.sin(radians(longitude2 - longitude1) / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
 export function RoutingDashboard() {
   const [dataset, setDataset] = useState<RouteFeatureCollection>(() => sampleRoutes);
   const [province, setProvince] = useState(ALL);
@@ -20,6 +32,7 @@ export function RoutingDashboard() {
   const [hub, setHub] = useState(ALL);
   const [method, setMethod] = useState(ALL);
   const [maxDistance, setMaxDistance] = useState(300);
+  const [provinceQuery, setProvinceQuery] = useState("");
   const [notice, setNotice] = useState("ข้อมูลตัวอย่าง 10 สาขา · Offline Demo");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -66,6 +79,21 @@ export function RoutingDashboard() {
       reference: filtered.length - exact,
     };
   }, [filtered]);
+
+  const selectedProvince = useMemo(() => {
+    const query = normalizeProvinceInput(provinceQuery.split(" — ")[0] ?? "");
+    return provinceReference.find((item) => normalizeProvinceInput(item.thai) === query || normalizeProvinceInput(item.english) === query);
+  }, [provinceQuery]);
+
+  const nearestHubs = useMemo(() => {
+    if (!selectedProvince) return [];
+    const hubs = new Map<string, { id: string; name: string; region: string; latitude: number; longitude: number }>();
+    for (const feature of dataset.features) {
+      const end = feature.geometry.coordinates.at(-1);
+      if (end) hubs.set(feature.properties.Hub_ID, { id: feature.properties.Hub_ID, name: feature.properties.Hub_Name, region: feature.properties.Region, latitude: end[1], longitude: end[0] });
+    }
+    return [...hubs.values()].map((hubInfo) => ({ ...hubInfo, distance: haversineKm(selectedProvince.latitude, selectedProvince.longitude, hubInfo.latitude, hubInfo.longitude) })).sort((left, right) => left.distance - right.distance).slice(0, 3);
+  }, [dataset, selectedProvince]);
 
   const resetFilters = () => {
     setProvince(ALL);
@@ -212,6 +240,14 @@ export function RoutingDashboard() {
         <Metric label="จังหวัด" value={stats.provinces.toLocaleString("th-TH")} note={`${stats.hubs} Regional Hubs`} />
         <Metric label="ระยะทางเฉลี่ย" value={`${stats.average.toLocaleString("th-TH", { maximumFractionDigits: 1 })} km`} note={`ไกลสุด ${stats.longest.toLocaleString("th-TH", { maximumFractionDigits: 1 })} km`} />
         <Metric label="คุณภาพพิกัด" value={`${stats.exact} Exact`} note={`${stats.reference} Province reference`} />
+      </section>
+
+      <section className="province-planner" aria-labelledby="province-planner-title">
+        <div className="planner-intro"><p className="eyebrow">PROVINCE CHECK</p><h2 id="province-planner-title">ตรวจจังหวัดเพิ่มเติม</h2><p>พิมพ์ชื่อจังหวัดไทยหรืออังกฤษ เพื่อดู Regional Hub ที่ใกล้ที่สุดจากชุดข้อมูลปัจจุบัน</p></div>
+        <label className="province-search"><span>จังหวัดที่ต้องการตรวจ</span><input list="province-options" value={provinceQuery} onChange={(event) => setProvinceQuery(event.target.value)} placeholder="เช่น เชียงราย หรือ Chiang Rai" /><datalist id="province-options">{provinceReference.map((item) => <option key={item.english} value={`${item.thai} — ${item.english}`} />)}</datalist></label>
+        <div className="nearest-hubs">
+          {selectedProvince ? nearestHubs.map((nearby, index) => <article key={nearby.id}><span>#{index + 1} ใกล้สุด</span><b>{nearby.name}</b><small>{nearby.region}</small><strong>{nearby.distance.toLocaleString("th-TH", { maximumFractionDigits: 1 })} km</strong></article>) : <p>รองรับ 77 จังหวัด: ไทย / English</p>}
+        </div>
       </section>
 
       <section className="workspace">
