@@ -41,6 +41,7 @@ def test_all_77_provinces_and_normalization():
     assert normalize_province_name(" จังหวัดกรุงเทพมหานคร ") == normalize_province_name("กรุงเทพมหานคร")
     assert reference.lookup("จังหวัดกรุงเทพมหานคร")["Province_Code"] == "BKK"
     assert reference.lookup("จังหวัดกรุงเทพ")["Province_Code"] == "BKK"
+    assert reference.lookup("กรุงเทพฯ")["Province_Code"] == "BKK"
     assert reference.lookup("Ayutthaya")["Province_Code"] == "AYA"
 
 

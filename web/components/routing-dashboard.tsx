@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { type ChangeEvent, useMemo, useRef, useState } from "react";
-import { normalizeGeoJson, workbookRowsToGeoJson } from "@/lib/geojson";
+import { inputWorkbookToGeoJson, normalizeGeoJson, workbookRowsToGeoJson } from "@/lib/geojson";
 import { sampleRoutes } from "@/lib/sample-routes";
 import type { RouteFeatureCollection } from "@/lib/types";
 
@@ -83,8 +83,15 @@ export function RoutingDashboard() {
       if (/\.xlsx$/i.test(file.name)) {
         const XLSX = await import("xlsx");
         const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-        const sheet = workbook.Sheets.Route_Results ?? workbook.Sheets[workbook.SheetNames[0]];
-        nextDataset = workbookRowsToGeoJson(XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet));
+        if (workbook.Sheets.Branches && workbook.Sheets.Regional_Hubs) {
+          nextDataset = inputWorkbookToGeoJson(
+            XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets.Branches),
+            XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets.Regional_Hubs),
+          );
+        } else {
+          const sheet = workbook.Sheets.Route_Results ?? workbook.Sheets[workbook.SheetNames[0]];
+          nextDataset = workbookRowsToGeoJson(XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet));
+        }
         if (!nextDataset.features.length) throw new Error("ไม่พบพิกัดสาขาและ Hub ที่ใช้สร้างเส้นบนแผนที่");
       } else {
         nextDataset = normalizeGeoJson(JSON.parse(await file.text()));
@@ -127,7 +134,7 @@ export function RoutingDashboard() {
           <input ref={inputRef} className="visually-hidden" type="file" accept=".geojson,.json,.xlsx" onChange={handleFile} />
           <button className="button primary" onClick={() => inputRef.current?.click()}><span>＋</span> เปิดผลลัพธ์</button>
           <button className="button secondary" onClick={downloadFiltered}>ดาวน์โหลด GeoJSON</button>
-          <small>รองรับ routes.geojson และ route_results.xlsx</small>
+          <small>รองรับ input (.xlsx), route_results.xlsx และ routes.geojson</small>
         </div>
       </section>
 

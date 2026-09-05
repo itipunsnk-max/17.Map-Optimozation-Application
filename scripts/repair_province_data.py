@@ -93,7 +93,10 @@ THAI_BY_CODE = {
 
 def main() -> None:
     path = Path(__file__).resolve().parents[1] / "data" / "thailand_provinces.csv"
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+    # The legacy source was saved with a Thai Windows code page.  Its non-Thai
+    # columns are ASCII, while Province_TH is replaced below from this checked
+    # 77-province mapping, so decode it explicitly before writing UTF-8.
+    with path.open("r", encoding="cp874", newline="") as handle:
         rows = list(csv.DictReader(handle))
     if len(rows) != 77 or {row["Province_Code"] for row in rows} != set(THAI_BY_CODE):
         raise RuntimeError("Province reference code set does not match the 77-row source data.")
