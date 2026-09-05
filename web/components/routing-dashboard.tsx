@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { type ChangeEvent, useMemo, useRef, useState } from "react";
 import { inputWorkbookToGeoJson, normalizeGeoJson, workbookRowsToGeoJson } from "@/lib/geojson";
 import { provinceReference } from "@/lib/province-reference";
+import { routeMapToPng } from "@/lib/route-map-export";
 import { sampleRoutes } from "@/lib/sample-routes";
 import type { RouteFeatureCollection } from "@/lib/types";
 
@@ -146,7 +147,7 @@ export function RoutingDashboard() {
 
   const downloadExcel = async () => {
     if (!filtered.length) return;
-    const XLSX = await import("xlsx");
+    const ExcelJS = await import("exceljs");
     const routes = filtered.map(({ properties: p }) => ({
       Branch_ID: p.Branch_ID,
       Branch_Name: p.Branch_Name,
@@ -189,12 +190,28 @@ export function RoutingDashboard() {
       { Metric: "Province reference", Value: stats.reference, Note: "Static province reference point" },
       { Metric: "Distance interpretation", Value: "See Routing_Source", Note: "Input preview uses a straight-line nearest-hub estimate" },
     ];
-    const workbook = XLSX.utils.book_new();
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Route Intelligence";
+    workbook.created = new Date();
     const addSheet = (name: string, rows: Record<string, unknown>[]) => {
-      const sheet = XLSX.utils.json_to_sheet(rows);
-      sheet["!cols"] = Object.keys(rows[0] ?? {}).map((key) => ({ wch: Math.min(Math.max(key.length + 2, 14), 34) }));
-      XLSX.utils.book_append_sheet(workbook, sheet, name);
+      const sheet = workbook.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1 }] });
+      const keys = Object.keys(rows[0] ?? {});
+      sheet.columns = keys.map((key) => ({ header: key, key, width: Math.min(Math.max(key.length + 4, 16), 34) }));
+      sheet.addRows(rows);
+      const header = sheet.getRow(1);
+      header.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+      header.alignment = { vertical: "middle" };
+      sheet.autoFilter = { from: "A1", to: { row: 1, column: keys.length } };
+      return sheet;
     };
+    const routeMap = workbook.addWorksheet("Route_Map");
+    routeMap.getCell("B2").value = "Thailand Route Overview";
+    routeMap.getCell("B2").font = { name: "Segoe UI", size: 20, bold: true, color: { argb: "FF1E3A8A" } };
+    routeMap.getCell("B3").value = "Schematic route map from the current filters. Lines show selected routes; use Route_Summary for audit details.";
+    routeMap.getCell("B3").font = { name: "Segoe UI", size: 10, color: { argb: "FF475569" } };
+    routeMap.addImage(workbook.addImage({ base64: routeMapToPng(filtered), extension: "png" }), { tl: { col: 1, row: 4 }, ext: { width: 1200, height: 675 } });
+    routeMap.getColumn(2).width = 18;
     addSheet("Executive_Summary", [
       { Metric: "Routes displayed", Value: stats.branches },
       { Metric: "Provinces covered", Value: stats.provinces },
@@ -207,8 +224,14 @@ export function RoutingDashboard() {
     addSheet("Assignment_Matrix", matrix);
     addSheet("Hub_Summary", hubSummary);
     addSheet("Data_Quality", dataQuality);
-    XLSX.writeFile(workbook, `route-intelligence-${new Date().toISOString().slice(0, 10)}.xlsx`, { compression: true });
-    setNotice(`ส่งออก Excel สำเร็จ · ${filtered.length.toLocaleString("th-TH")} เส้นทาง · 5 ชีต`);
+    const output = await workbook.xlsx.writeBuffer();
+    const url = URL.createObjectURL(new Blob([output], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `route-intelligence-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setNotice(`ส่งออก Excel สำเร็จ · ${filtered.length.toLocaleString("th-TH")} เส้นทาง · 6 ชีต พร้อม Route_Map`);
   };
 
   return (
