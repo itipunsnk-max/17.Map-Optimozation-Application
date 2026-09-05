@@ -7,7 +7,7 @@ from src.cache import RouteCache
 from src.haversine import haversine_km
 from src.location_resolver import resolve_locations
 from src.models import Coordinate, RouteMetric
-from src.province_reference import normalize_province_name
+from src.province_reference import ProvinceReference, normalize_province_name
 from src.province_resolver import load_province_reference
 from src.route_ranker import rank_hubs
 from src.routing_provider import OfflineRoutingProvider
@@ -43,6 +43,13 @@ def test_all_77_provinces_and_normalization():
     assert reference.lookup("จังหวัดกรุงเทพ")["Province_Code"] == "BKK"
     assert reference.lookup("กรุงเทพฯ")["Province_Code"] == "BKK"
     assert reference.lookup("Ayutthaya")["Province_Code"] == "AYA"
+
+
+def test_reference_loads_legacy_thai_csv(tmp_path):
+    reference = load_province_reference()
+    legacy_path = tmp_path / "provinces-cp874.csv"
+    reference.data.to_csv(legacy_path, index=False, encoding="cp874")
+    assert ProvinceReference(legacy_path).lookup("กรุงเทพฯ")["Province_Code"] == "BKK"
 
 
 def test_location_modes_and_exact_override():

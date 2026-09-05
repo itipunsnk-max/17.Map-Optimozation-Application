@@ -41,7 +41,12 @@ class ProvinceReference:
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
-        self.data = pd.read_csv(self.path, dtype={"Province_Code": "string"}, encoding="utf-8")
+        try:
+            # UTF-8 with BOM opens correctly in Excel while remaining valid UTF-8.
+            self.data = pd.read_csv(self.path, dtype={"Province_Code": "string"}, encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            # Keep existing workbooks usable if Excel saved a legacy Thai CSV.
+            self.data = pd.read_csv(self.path, dtype={"Province_Code": "string"}, encoding="cp874")
         missing = [column for column in REQUIRED_COLUMNS if column not in self.data.columns]
         if missing:
             raise ValueError(f"Province reference is missing columns: {', '.join(missing)}")

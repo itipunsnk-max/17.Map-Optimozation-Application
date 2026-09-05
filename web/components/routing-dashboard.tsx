@@ -116,6 +116,73 @@ export function RoutingDashboard() {
     URL.revokeObjectURL(url);
   };
 
+  const downloadExcel = async () => {
+    if (!filtered.length) return;
+    const XLSX = await import("xlsx");
+    const routes = filtered.map(({ properties: p }) => ({
+      Branch_ID: p.Branch_ID,
+      Branch_Name: p.Branch_Name,
+      Province: p.Province,
+      Assigned_Hub_ID: p.Hub_ID,
+      Assigned_Hub_Name: p.Hub_Name,
+      Hub_Region: p.Region,
+      Location_Method: p.Location_Method,
+      Distance_km: Number.isFinite(p.Distance_km) ? Number(p.Distance_km.toFixed(2)) : "",
+      Duration_min: Number.isFinite(p.Duration_min) ? Number(p.Duration_min.toFixed(1)) : "",
+      Distance_Band: p.Distance_Band,
+      Routing_Source: p.Routing_Source ?? "",
+      Coordinate_Source: p.Coordinate_Source ?? "",
+      Geometry_Source: p.Geometry_Source ?? "",
+    }));
+    const hubs = [...new Set(routes.map((route) => route.Assigned_Hub_Name))];
+    const matrix = routes.map((route) => ({
+      Branch_ID: route.Branch_ID,
+      Branch_Name: route.Branch_Name,
+      Province: route.Province,
+      ...Object.fromEntries(hubs.map((hubName) => [hubName, route.Assigned_Hub_Name === hubName ? route.Distance_km : ""])),
+    }));
+    const hubSummary = hubs.map((hubName) => {
+      const assigned = routes.filter((route) => route.Assigned_Hub_Name === hubName);
+      const distances = assigned.map((route) => Number(route.Distance_km)).filter(Number.isFinite);
+      return {
+        Hub_Name: hubName,
+        Hub_ID: assigned[0]?.Assigned_Hub_ID ?? "",
+        Region: assigned[0]?.Hub_Region ?? "",
+        Assigned_Branches: assigned.length,
+        Covered_Provinces: new Set(assigned.map((route) => route.Province)).size,
+        Average_Distance_km: distances.length ? Number((distances.reduce((total, value) => total + value, 0) / distances.length).toFixed(2)) : "",
+        Longest_Distance_km: distances.length ? Number(Math.max(...distances).toFixed(2)) : "",
+      };
+    });
+    const dataQuality = [
+      { Metric: "Displayed routes", Value: filtered.length, Note: "Current filters applied" },
+      { Metric: "Input dataset", Value: dataset.features.length, Note: notice },
+      { Metric: "Exact coordinates", Value: stats.exact, Note: "Coordinates supplied in source" },
+      { Metric: "Province reference", Value: stats.reference, Note: "Static province reference point" },
+      { Metric: "Distance interpretation", Value: "See Routing_Source", Note: "Input preview uses a straight-line nearest-hub estimate" },
+    ];
+    const workbook = XLSX.utils.book_new();
+    const addSheet = (name: string, rows: Record<string, unknown>[]) => {
+      const sheet = XLSX.utils.json_to_sheet(rows);
+      sheet["!cols"] = Object.keys(rows[0] ?? {}).map((key) => ({ wch: Math.min(Math.max(key.length + 2, 14), 34) }));
+      XLSX.utils.book_append_sheet(workbook, sheet, name);
+    };
+    addSheet("Executive_Summary", [
+      { Metric: "Routes displayed", Value: stats.branches },
+      { Metric: "Provinces covered", Value: stats.provinces },
+      { Metric: "Assigned hubs", Value: stats.hubs },
+      { Metric: "Average distance (km)", Value: Number(stats.average.toFixed(2)) },
+      { Metric: "Longest distance (km)", Value: Number(stats.longest.toFixed(2)) },
+      { Metric: "Exported at", Value: new Date().toLocaleString("th-TH") },
+    ]);
+    addSheet("Route_Summary", routes);
+    addSheet("Assignment_Matrix", matrix);
+    addSheet("Hub_Summary", hubSummary);
+    addSheet("Data_Quality", dataQuality);
+    XLSX.writeFile(workbook, `route-intelligence-${new Date().toISOString().slice(0, 10)}.xlsx`, { compression: true });
+    setNotice(`ส่งออก Excel สำเร็จ · ${filtered.length.toLocaleString("th-TH")} เส้นทาง · 5 ชีต`);
+  };
+
   return (
     <main>
       <header className="topbar">
@@ -125,16 +192,18 @@ export function RoutingDashboard() {
       </header>
 
       <section className="hero">
-        <div>
+        <div className="hero-copy-wrap">
           <p className="eyebrow">BRANCH → REGIONAL HUB</p>
-          <h1>มองเห็นทุกเส้นทาง<br /><em>ก่อนตัดสินใจ</em></h1>
-          <p className="hero-copy">เปลี่ยนผลคำนวณระยะทางให้เป็นภาพรวมที่ตรวจสอบได้ เปรียบเทียบพื้นที่บริการ และค้นหาสาขาที่ควรทบทวนบนแผนที่เดียว</p>
+          <h1>ตัดสินใจเรื่อง<br /><em>เส้นทางอย่างมั่นใจ</em></h1>
+          <p className="hero-copy">รวมข้อมูลสาขา Hub และระยะทางไว้ในมุมมองเดียว เพื่อค้นหาเส้นทางที่ควรทบทวนและส่งออกเป็นรายงาน Excel ได้ทันที</p>
+          <div className="hero-tags"><span>Thailand coverage</span><span>Route audit ready</span><span>Excel export</span></div>
         </div>
         <div className="hero-actions">
           <input ref={inputRef} className="visually-hidden" type="file" accept=".geojson,.json,.xlsx" onChange={handleFile} />
-          <button className="button primary" onClick={() => inputRef.current?.click()}><span>＋</span> เปิดผลลัพธ์</button>
-          <button className="button secondary" onClick={downloadFiltered}>ดาวน์โหลด GeoJSON</button>
-          <small>รองรับ input (.xlsx), route_results.xlsx และ routes.geojson</small>
+          <button className="button primary" type="button" onClick={() => inputRef.current?.click()}><span>↑</span> อัปโหลดข้อมูล</button>
+          <button className="button secondary" type="button" onClick={downloadExcel} disabled={!filtered.length}>ส่งออก Excel</button>
+          <button className="button text-button" type="button" onClick={downloadFiltered} disabled={!filtered.length}>ดาวน์โหลด GeoJSON →</button>
+          <small>รองรับ `Branches` + `Regional_Hubs`, route_results.xlsx และ routes.geojson</small>
         </div>
       </section>
 
@@ -157,7 +226,7 @@ export function RoutingDashboard() {
             <input type="range" min="0" max="500" step="10" value={maxDistance} onChange={(e) => setMaxDistance(Number(e.target.value))} />
             <i><span>0</span><span>500+ km</span></i>
           </label>
-          <div className="data-note"><span className="status-dot" /><div><b>ชุดข้อมูลปัจจุบัน</b><p>{notice}</p></div></div>
+          <div className="data-note"><span className="status-dot" /><div><b>ชุดข้อมูลปัจจุบัน</b><p>{notice}</p><small>Input preview เป็นเส้นตรงเพื่อดูภาพรวม; ใช้ Route Results สำหรับผลระยะถนนที่ผ่านการคำนวณ</small></div></div>
         </aside>
 
         <div className="map-panel">
@@ -173,10 +242,10 @@ export function RoutingDashboard() {
       </section>
 
       <section className="insights">
-        <div><p className="eyebrow">DECISION SUPPORT</p><h2>ใช้ข้อมูลนี้ตัดสินใจอะไรได้บ้าง</h2></div>
-        <Insight number="01" title="ตรวจ TOR" text="เก็บระยะทาง แหล่งพิกัด วิธีคำนวณ และ Hub ที่ได้รับเลือกไว้ตรวจสอบย้อนหลัง" />
-        <Insight number="02" title="ทบทวนพื้นที่บริการ" text="กรองเส้นทางไกลหรือข้ามภูมิภาค เพื่อมองหาการจัดสรร Hub ที่ควรตรวจเพิ่ม" />
-        <Insight number="03" title="วางแผนสัญญาและขนส่ง" text="ใช้ distance band แบ่งโซนค่าบริการ ประเมินภาระงาน และส่งต่อ QGIS หรือ Power BI" />
+        <div><p className="eyebrow">DECISION SUPPORT</p><h2>จากแผนที่สู่การตัดสินใจ</h2></div>
+        <Insight number="01" title="มองจุดเสี่ยง" text="กรองเส้นทางไกลหรือข้ามภูมิภาค เพื่อหาสาขาที่ควรตรวจสอบก่อน" />
+        <Insight number="02" title="ส่งต่อรายงาน" text="Excel มี summary, route details, assignment matrix และ quality notes พร้อมใช้งาน" />
+        <Insight number="03" title="รักษา Audit trail" text="เก็บแหล่งพิกัด วิธีระบุตำแหน่ง และชนิดของระยะทางไว้ทุกครั้งที่ส่งออก" />
       </section>
 
       <section className="route-table-section">

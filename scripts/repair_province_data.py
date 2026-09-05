@@ -102,7 +102,8 @@ def main() -> None:
         raise RuntimeError("Province reference code set does not match the 77-row source data.")
     for row in rows:
         row["Province_TH"] = decode(THAI_BY_CODE[row["Province_Code"]])
-    with path.open("w", encoding="utf-8", newline="") as handle:
+    # BOM makes Excel on Windows consistently recognize Thai text as UTF-8.
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
         writer.writeheader()
         writer.writerows(rows)
