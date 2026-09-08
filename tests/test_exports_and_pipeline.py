@@ -54,6 +54,12 @@ def test_excel_loader_round_trip(tmp_path):
     assert len(loaded_hubs) == 3
 
 
+def test_excel_loader_resolves_bare_filename_from_input_directory():
+    branches, hubs = load_input_workbook("sample_locations.xlsx")
+    assert not branches.empty
+    assert not hubs.empty
+
+
 def test_province_level_and_assigned_geometry_only(tmp_path):
     class CountingProvider(OfflineRoutingProvider):
         def __init__(self):

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from config.settings import get_settings
 from src.excel_export import export_analysis_excel
+from src.excel_loader import ExcelInputError
 from src.geojson_export import write_geojson
 from src.logger import configure_logging
 from src.map_builder import save_map
@@ -39,7 +40,10 @@ def main(argv: list[str] | None = None) -> int:
         provider = OpenRouteServiceProvider(settings.ors_api_key, settings.matrix_url, settings.directions_geojson_url, settings.request_timeout_seconds, settings.retry_count, settings.retry_backoff_seconds, logger=logger)
         if not provider.health_check():
             raise SystemExit("ORS_API_KEY is not configured. Set it in .env or rerun with --offline for a development-only sample calculation.")
-    result = run_analysis_from_excel(args.input, provider, settings=settings, location_mode=args.location_mode, analysis_level=args.analysis_level, use_cache=not args.no_cache, force_recalculate=args.force_recalculate, logger=logger)
+    try:
+        result = run_analysis_from_excel(args.input, provider, settings=settings, location_mode=args.location_mode, analysis_level=args.analysis_level, use_cache=not args.no_cache, force_recalculate=args.force_recalculate, logger=logger)
+    except ExcelInputError as exc:
+        raise SystemExit(f"Input error: {exc}") from exc
     excel_path = output_dir / "route_results.xlsx"
     geojson_path = output_dir / "routes.geojson"
     map_path = output_dir / "route_map.html"

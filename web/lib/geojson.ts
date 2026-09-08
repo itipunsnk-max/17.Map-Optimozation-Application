@@ -3,6 +3,15 @@ import { provinceReference } from "./province-reference";
 
 type WorkbookRow = Record<string, unknown>;
 
+export type InputWorkbookReport = {
+  totalBranches: number;
+  importedBranches: number;
+  skippedBranches: number;
+  totalHubs: number;
+  resolvedHubs: number;
+  skippedHubs: number;
+};
+
 const provinceAliases: Record<string, string> = {
   "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e": "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e\u0e21\u0e2b\u0e32\u0e19\u0e04\u0e23",
   "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e\u0e2f": "\u0e01\u0e23\u0e38\u0e07\u0e40\u0e17\u0e1e\u0e21\u0e2b\u0e32\u0e19\u0e04\u0e23",
@@ -21,7 +30,9 @@ const provinceCoordinates = new Map<string, [number, number]>(provinceReference.
 
 const numberFrom = (row: WorkbookRow, keys: string[]) => {
   for (const key of keys) {
-    const value = Number(row[key]);
+    const raw = row[key];
+    if (raw === undefined || raw === null || (typeof raw === "string" && raw.trim() === "")) continue;
+    const value = Number(raw);
     if (Number.isFinite(value)) return value;
   }
   return Number.NaN;
@@ -48,8 +59,16 @@ const haversineKm = ([lat1, lon1]: [number, number], [lat2, lon2]: [number, numb
   return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-/** Create a display-only preview from the documented Branches and Regional_Hubs input sheets. */
-export function inputWorkbookToGeoJson(branches: WorkbookRow[], hubs: WorkbookRow[]): RouteFeatureCollection {
+export function routeDistanceCeiling(features: RouteFeature[], minimum = 100, step = 50): number {
+  const longest = Math.max(0, ...features.map((feature) => feature.properties.Distance_km).filter(Number.isFinite));
+  return Math.max(minimum, Math.ceil(longest / step) * step);
+}
+
+/** Create a display-only preview and an import-quality report from the documented input sheets. */
+export function analyzeInputWorkbook(branches: WorkbookRow[], hubs: WorkbookRow[]): {
+  dataset: RouteFeatureCollection;
+  report: InputWorkbookReport;
+} {
   const resolvedHubs = hubs.flatMap((hub) => {
     const province = stringFrom(hub, ["Province"], "");
     const coordinate = coordinateFrom(hub, province);
@@ -72,7 +91,22 @@ export function inputWorkbookToGeoJson(branches: WorkbookRow[], hubs: WorkbookRo
       Coordinate_Source: "Input workbook / province reference", Geometry_Source: "Straight preview line; not audited route calculation",
     }}];
   });
-  return { type: "FeatureCollection", name: "Input workbook preview", features };
+  return {
+    dataset: { type: "FeatureCollection", name: "Input workbook preview", features },
+    report: {
+      totalBranches: branches.length,
+      importedBranches: features.length,
+      skippedBranches: branches.length - features.length,
+      totalHubs: hubs.length,
+      resolvedHubs: resolvedHubs.length,
+      skippedHubs: hubs.length - resolvedHubs.length,
+    },
+  };
+}
+
+/** Backward-compatible dataset-only helper. */
+export function inputWorkbookToGeoJson(branches: WorkbookRow[], hubs: WorkbookRow[]): RouteFeatureCollection {
+  return analyzeInputWorkbook(branches, hubs).dataset;
 }
 
 export function workbookRowsToGeoJson(rows: WorkbookRow[]): RouteFeatureCollection {

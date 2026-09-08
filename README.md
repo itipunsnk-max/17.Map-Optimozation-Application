@@ -41,6 +41,14 @@ Excel
 - `output/routes.geojson`: แสดง route geometry ที่ export จาก routing provider โดยตรง
 - `output/route_results.xlsx`: สร้างเส้นตรงสำหรับการมองภาพรวมจากพิกัดสาขาไป Hub และระบุ `Geometry_Source` ว่าเป็น display line
 
+หน้าเว็บรับ Input Excel ที่มีชีต `Branches` และ `Regional_Hubs` ได้โดยตรงเช่นกัน ระบบจะแจ้งจำนวนแถวที่นำเข้า/ข้ามอย่างชัดเจน คำนวณ Hub ที่ใกล้ที่สุดสำหรับทุกแถวที่ระบุตำแหน่งได้ และปรับช่วงตัวกรองระยะทางให้ครอบคลุมผลลัพธ์ทั้งหมด
+
+ปุ่มส่งออกบนหน้าเว็บรองรับ:
+
+- Excel: ชีตแรกชื่อ `Route_Map` และฝังภาพแผนที่ ตามด้วยชีตสรุปและตารางตรวจสอบ
+- HTML: แผนที่ Leaflet แบบโต้ตอบ แสดงระยะทางบนเส้นทางและมีลิงก์เปิดเส้นทางใน Google Maps
+- GeoJSON: ข้อมูลเส้นทางสำหรับ GIS และการนำไปประมวลผลต่อ
+
 เริ่ม web dashboard ในเครื่อง:
 
 ```powershell
@@ -143,6 +151,8 @@ python cli.py --input input/locations.xlsx --output-dir output
 
 ```powershell
 python cli.py --input input/sample_locations.xlsx --output-dir output --offline --force-recalculate
+# Bare file names are also resolved from the input/ directory:
+python cli.py --input sample_locations.xlsx --output-dir output --offline --force-recalculate
 ```
 
 ตัวเลือกสำคัญ: `--location-mode`, `--analysis-level`, `--no-cache`, `--force-recalculate`
@@ -169,6 +179,8 @@ Log อ่านง่ายอยู่ที่ `logs/application.log` คร�
 
 ```powershell
 pytest -q
+cd web
+npm test
 ```
 
 ตรวจ syntax/import:

@@ -14,6 +14,30 @@ class ExcelInputError(ValueError):
     """Raised when the workbook cannot provide the required input tables."""
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _resolve_source(source: str | Path | BinaryIO) -> str | Path | BinaryIO:
+    """Resolve project-relative workbook names without affecting file-like uploads."""
+    if not isinstance(source, (str, Path)):
+        return source
+
+    path = Path(source).expanduser()
+    if path.exists() or path.is_absolute():
+        return path
+
+    project_relative = PROJECT_ROOT / path
+    if project_relative.exists():
+        return project_relative
+
+    # A bare name such as ``sample_locations.xlsx`` conventionally lives in input/.
+    if len(path.parts) == 1:
+        input_relative = PROJECT_ROOT / "input" / path
+        if input_relative.exists():
+            return input_relative
+    return path
+
+
 def _find_sheet(sheet_names: list[str], expected: str) -> str | None:
     key = "".join(ch for ch in expected.lower() if ch.isalnum())
     for sheet in sheet_names:
@@ -24,6 +48,7 @@ def _find_sheet(sheet_names: list[str], expected: str) -> str | None:
 
 def load_workbook(source: str | Path | BinaryIO, allow_province_only: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load Branches and Regional_Hubs sheets and canonicalize common headers."""
+    source = _resolve_source(source)
     try:
         workbook = pd.ExcelFile(source, engine="openpyxl")
     except Exception as exc:

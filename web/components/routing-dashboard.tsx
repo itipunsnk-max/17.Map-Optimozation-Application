@@ -2,9 +2,11 @@
 
 import dynamic from "next/dynamic";
 import { type ChangeEvent, useMemo, useRef, useState } from "react";
-import { inputWorkbookToGeoJson, normalizeGeoJson, workbookRowsToGeoJson } from "@/lib/geojson";
+import { analyzeInputWorkbook, normalizeGeoJson, routeDistanceCeiling, workbookRowsToGeoJson } from "@/lib/geojson";
 import { provinceReference } from "@/lib/province-reference";
+import { routeFeaturesToHtml } from "@/lib/route-html-export";
 import { routeMapToPng } from "@/lib/route-map-export";
+import { buildRouteWorkbook } from "@/lib/route-workbook-export";
 import { sampleRoutes } from "@/lib/sample-routes";
 import type { RouteFeatureCollection } from "@/lib/types";
 
@@ -32,7 +34,7 @@ export function RoutingDashboard() {
   const [region, setRegion] = useState(ALL);
   const [hub, setHub] = useState(ALL);
   const [method, setMethod] = useState(ALL);
-  const [maxDistance, setMaxDistance] = useState(300);
+  const [maxDistance, setMaxDistance] = useState(() => routeDistanceCeiling(sampleRoutes.features));
   const [provinceQuery, setProvinceQuery] = useState("");
   const [notice, setNotice] = useState("ข้อมูลตัวอย่าง 10 สาขา · Offline Demo");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -55,6 +57,7 @@ export function RoutingDashboard() {
       && (method === ALL || p.Location_Method === method)
       && p.Distance_km <= maxDistance;
   }), [dataset, hub, maxDistance, method, province, region]);
+  const maximumAvailableDistance = useMemo(() => routeDistanceCeiling(dataset.features), [dataset]);
 
   const stats = useMemo(() => {
     let totalDistance = 0;
@@ -96,12 +99,12 @@ export function RoutingDashboard() {
     return [...hubs.values()].map((hubInfo) => ({ ...hubInfo, distance: haversineKm(selectedProvince.latitude, selectedProvince.longitude, hubInfo.latitude, hubInfo.longitude) })).sort((left, right) => left.distance - right.distance).slice(0, 3);
   }, [dataset, selectedProvince]);
 
-  const resetFilters = () => {
+  const resetFilters = (targetDataset = dataset) => {
     setProvince(ALL);
     setRegion(ALL);
     setHub(ALL);
     setMethod(ALL);
-    setMaxDistance(300);
+    setMaxDistance(routeDistanceCeiling(targetDataset.features));
   };
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -109,14 +112,19 @@ export function RoutingDashboard() {
     if (!file) return;
     try {
       let nextDataset: RouteFeatureCollection;
+      let importNotice = "";
       if (/\.xlsx$/i.test(file.name)) {
         const XLSX = await import("xlsx");
         const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
         if (workbook.Sheets.Branches && workbook.Sheets.Regional_Hubs) {
-          nextDataset = inputWorkbookToGeoJson(
+          const imported = analyzeInputWorkbook(
             XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets.Branches),
             XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets.Regional_Hubs),
           );
+          nextDataset = imported.dataset;
+          const report = imported.report;
+          const skipped = report.skippedBranches + report.skippedHubs;
+          importNotice = `${file.name} · นำเข้าสาขา ${report.importedBranches.toLocaleString("th-TH")}/${report.totalBranches.toLocaleString("th-TH")} · Hub ${report.resolvedHubs.toLocaleString("th-TH")}/${report.totalHubs.toLocaleString("th-TH")}${skipped ? ` · ข้าม ${skipped.toLocaleString("th-TH")} แถวที่ไม่มีตำแหน่ง` : " · ข้อมูลครบ"}`;
         } else {
           const sheet = workbook.Sheets.Route_Results ?? workbook.Sheets[workbook.SheetNames[0]];
           nextDataset = workbookRowsToGeoJson(XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet));
@@ -126,8 +134,8 @@ export function RoutingDashboard() {
         nextDataset = normalizeGeoJson(JSON.parse(await file.text()));
       }
       setDataset(nextDataset);
-      resetFilters();
-      setNotice(`${file.name} · ${nextDataset.features.length.toLocaleString("th-TH")} เส้นทาง`);
+      resetFilters(nextDataset);
+      setNotice(importNotice || `${file.name} · ${nextDataset.features.length.toLocaleString("th-TH")} เส้นทาง`);
     } catch (error) {
       setNotice(error instanceof Error ? `เปิดไฟล์ไม่ได้: ${error.message}` : "เปิดไฟล์ไม่ได้");
     } finally {
@@ -147,83 +155,7 @@ export function RoutingDashboard() {
 
   const downloadExcel = async () => {
     if (!filtered.length) return;
-    const ExcelJS = await import("exceljs");
-    const routes = filtered.map(({ properties: p }) => ({
-      Branch_ID: p.Branch_ID,
-      Branch_Name: p.Branch_Name,
-      Province: p.Province,
-      Assigned_Hub_ID: p.Hub_ID,
-      Assigned_Hub_Name: p.Hub_Name,
-      Hub_Region: p.Region,
-      Location_Method: p.Location_Method,
-      Distance_km: Number.isFinite(p.Distance_km) ? Number(p.Distance_km.toFixed(2)) : "",
-      Duration_min: Number.isFinite(p.Duration_min) ? Number(p.Duration_min.toFixed(1)) : "",
-      Distance_Band: p.Distance_Band,
-      Routing_Source: p.Routing_Source ?? "",
-      Coordinate_Source: p.Coordinate_Source ?? "",
-      Geometry_Source: p.Geometry_Source ?? "",
-    }));
-    const hubs = [...new Set(routes.map((route) => route.Assigned_Hub_Name))];
-    const matrix = routes.map((route) => ({
-      Branch_ID: route.Branch_ID,
-      Branch_Name: route.Branch_Name,
-      Province: route.Province,
-      ...Object.fromEntries(hubs.map((hubName) => [hubName, route.Assigned_Hub_Name === hubName ? route.Distance_km : ""])),
-    }));
-    const hubSummary = hubs.map((hubName) => {
-      const assigned = routes.filter((route) => route.Assigned_Hub_Name === hubName);
-      const distances = assigned.map((route) => Number(route.Distance_km)).filter(Number.isFinite);
-      return {
-        Hub_Name: hubName,
-        Hub_ID: assigned[0]?.Assigned_Hub_ID ?? "",
-        Region: assigned[0]?.Hub_Region ?? "",
-        Assigned_Branches: assigned.length,
-        Covered_Provinces: new Set(assigned.map((route) => route.Province)).size,
-        Average_Distance_km: distances.length ? Number((distances.reduce((total, value) => total + value, 0) / distances.length).toFixed(2)) : "",
-        Longest_Distance_km: distances.length ? Number(Math.max(...distances).toFixed(2)) : "",
-      };
-    });
-    const dataQuality = [
-      { Metric: "Displayed routes", Value: filtered.length, Note: "Current filters applied" },
-      { Metric: "Input dataset", Value: dataset.features.length, Note: notice },
-      { Metric: "Exact coordinates", Value: stats.exact, Note: "Coordinates supplied in source" },
-      { Metric: "Province reference", Value: stats.reference, Note: "Static province reference point" },
-      { Metric: "Distance interpretation", Value: "See Routing_Source", Note: "Input preview uses a straight-line nearest-hub estimate" },
-    ];
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = "Route Intelligence";
-    workbook.created = new Date();
-    const addSheet = (name: string, rows: Record<string, unknown>[]) => {
-      const sheet = workbook.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1 }] });
-      const keys = Object.keys(rows[0] ?? {});
-      sheet.columns = keys.map((key) => ({ header: key, key, width: Math.min(Math.max(key.length + 4, 16), 34) }));
-      sheet.addRows(rows);
-      const header = sheet.getRow(1);
-      header.font = { bold: true, color: { argb: "FFFFFFFF" } };
-      header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
-      header.alignment = { vertical: "middle" };
-      sheet.autoFilter = { from: "A1", to: { row: 1, column: keys.length } };
-      return sheet;
-    };
-    const routeMap = workbook.addWorksheet("Route_Map");
-    routeMap.getCell("B2").value = "Thailand Route Overview";
-    routeMap.getCell("B2").font = { name: "Segoe UI", size: 20, bold: true, color: { argb: "FF1E3A8A" } };
-    routeMap.getCell("B3").value = "Schematic route map from the current filters. Lines show selected routes; use Route_Summary for audit details.";
-    routeMap.getCell("B3").font = { name: "Segoe UI", size: 10, color: { argb: "FF475569" } };
-    routeMap.addImage(workbook.addImage({ base64: routeMapToPng(filtered), extension: "png" }), { tl: { col: 1, row: 4 }, ext: { width: 1200, height: 675 } });
-    routeMap.getColumn(2).width = 18;
-    addSheet("Executive_Summary", [
-      { Metric: "Routes displayed", Value: stats.branches },
-      { Metric: "Provinces covered", Value: stats.provinces },
-      { Metric: "Assigned hubs", Value: stats.hubs },
-      { Metric: "Average distance (km)", Value: Number(stats.average.toFixed(2)) },
-      { Metric: "Longest distance (km)", Value: Number(stats.longest.toFixed(2)) },
-      { Metric: "Exported at", Value: new Date().toLocaleString("th-TH") },
-    ]);
-    addSheet("Route_Summary", routes);
-    addSheet("Assignment_Matrix", matrix);
-    addSheet("Hub_Summary", hubSummary);
-    addSheet("Data_Quality", dataQuality);
+    const workbook = await buildRouteWorkbook(filtered, notice, routeMapToPng(filtered));
     const output = await workbook.xlsx.writeBuffer();
     const url = URL.createObjectURL(new Blob([output], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     const link = document.createElement("a");
@@ -232,6 +164,18 @@ export function RoutingDashboard() {
     link.click();
     URL.revokeObjectURL(url);
     setNotice(`ส่งออก Excel สำเร็จ · ${filtered.length.toLocaleString("th-TH")} เส้นทาง · 6 ชีต พร้อม Route_Map`);
+  };
+
+  const downloadHtml = () => {
+    if (!filtered.length) return;
+    const html = routeFeaturesToHtml(filtered, "Thailand Route Intelligence");
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `route-intelligence-${new Date().toISOString().slice(0, 10)}.html`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setNotice(`ส่งออก HTML สำเร็จ · ${filtered.length.toLocaleString("th-TH")} เส้นทาง · คลิกเส้นเพื่อดูระยะทาง`);
   };
 
   return (
@@ -246,15 +190,16 @@ export function RoutingDashboard() {
         <div className="hero-copy-wrap">
           <p className="eyebrow">BRANCH → REGIONAL HUB</p>
           <h1>ตัดสินใจเรื่อง<br /><em>เส้นทางอย่างมั่นใจ</em></h1>
-          <p className="hero-copy">รวมข้อมูลสาขา Hub และระยะทางไว้ในมุมมองเดียว เพื่อค้นหาเส้นทางที่ควรทบทวนและส่งออกเป็นรายงาน Excel ได้ทันที</p>
-          <div className="hero-tags"><span>Thailand coverage</span><span>Route audit ready</span><span>Excel export</span></div>
+          <p className="hero-copy">รวมข้อมูลสาขา Hub และระยะทางไว้ในมุมมองเดียว เพื่อค้นหาเส้นทางที่ควรทบทวนและส่งออกเป็นรายงาน Excel หรือแผนที่ HTML ได้ทันที</p>
+          <div className="hero-tags"><span>Thailand coverage</span><span>Route audit ready</span><span>Excel + HTML export</span></div>
         </div>
         <div className="hero-actions">
           <input ref={inputRef} className="visually-hidden" type="file" accept=".geojson,.json,.xlsx" onChange={handleFile} />
           <button className="button primary" type="button" onClick={() => inputRef.current?.click()}><span>↑</span> อัปโหลดข้อมูล</button>
           <button className="button secondary" type="button" onClick={downloadExcel} disabled={!filtered.length}>ส่งออก Excel</button>
+          <button className="button secondary" type="button" onClick={downloadHtml} disabled={!filtered.length}>ส่งออก HTML</button>
           <button className="button text-button" type="button" onClick={downloadFiltered} disabled={!filtered.length}>ดาวน์โหลด GeoJSON →</button>
-          <small>รองรับ `Branches` + `Regional_Hubs`, route_results.xlsx และ routes.geojson</small>
+          <small>รองรับ `Branches` + `Regional_Hubs`, route_results.xlsx และ routes.geojson · Excel เปิดด้วย Route_Map · HTML คลิกดูระยะทางได้</small>
         </div>
       </section>
 
@@ -275,15 +220,15 @@ export function RoutingDashboard() {
 
       <section className="workspace">
         <aside className="filters">
-          <div className="panel-heading"><div><p className="eyebrow">CONTROL PANEL</p><h2>ตัวกรองข้อมูล</h2></div><button onClick={resetFilters}>ล้างค่า</button></div>
+          <div className="panel-heading"><div><p className="eyebrow">CONTROL PANEL</p><h2>ตัวกรองข้อมูล</h2></div><button onClick={() => resetFilters()}>ล้างค่า</button></div>
           <Filter label="จังหวัด" value={province} values={options.provinces} onChange={setProvince} />
           <Filter label="ภูมิภาคของ Hub" value={region} values={options.regions} onChange={setRegion} />
           <Filter label="Regional Hub" value={hub} values={options.hubs} onChange={setHub} />
           <Filter label="วิธีระบุตำแหน่ง" value={method} values={options.methods} onChange={setMethod} />
           <label className="range-field">
             <span><b>ระยะทางสูงสุด</b><output>{maxDistance} km</output></span>
-            <input type="range" min="0" max="500" step="10" value={maxDistance} onChange={(e) => setMaxDistance(Number(e.target.value))} />
-            <i><span>0</span><span>500+ km</span></i>
+            <input type="range" min="0" max={maximumAvailableDistance} step="10" value={maxDistance} onChange={(e) => setMaxDistance(Number(e.target.value))} />
+            <i><span>0</span><span>{maximumAvailableDistance}+ km</span></i>
           </label>
           <div className="data-note"><span className="status-dot" /><div><b>ชุดข้อมูลปัจจุบัน</b><p>{notice}</p><small>Input preview เป็นเส้นตรงเพื่อดูภาพรวม; ใช้ Route Results สำหรับผลระยะถนนที่ผ่านการคำนวณ</small></div></div>
         </aside>
