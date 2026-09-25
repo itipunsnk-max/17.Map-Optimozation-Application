@@ -194,7 +194,7 @@ python -c "import app; import cli; import src.pipeline"
 
 เปิด `routes.geojson` ใน QGIS หรือ ArcGIS ได้โดยตรง ส่วน Power BI สามารถใช้ GeoJSON ผ่าน visual/connector ที่รองรับ GeoJSON และใช้ fields ใน properties เป็น filter/tooltip
 
-แผนที่ใช้ OpenStreetMap tiles และควรรักษา attribution ของ OpenStreetMap เมื่อเผยแพร่ผลลัพธ์
+ไฟล์ HTML ที่ส่งออกฝังเส้นขอบประเทศจาก Natural Earth ไว้ในไฟล์ จึงแสดงจุดและเส้นทางได้แม้เซิร์ฟเวอร์แผนที่แบบ tile ไม่ให้บริการ พื้นแผนที่นี้ไม่มีรายละเอียดถนน และการเปิด HTML ยังต้องเชื่อมต่ออินเทอร์เน็ตเพื่อโหลดไลบรารี Leaflet จาก CDN
 
 ## ข้อจำกัดและ troubleshooting
 

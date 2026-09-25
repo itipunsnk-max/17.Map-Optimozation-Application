@@ -8,6 +8,7 @@ from config.settings import get_settings
 from src.excel_export import export_analysis_excel
 from src.excel_loader import load_workbook as load_input_workbook
 from src.geojson_export import build_geojson
+from src.map_builder import save_map
 from src.pipeline import run_analysis
 from src.routing_provider import OfflineRoutingProvider
 
@@ -36,6 +37,15 @@ def test_pipeline_and_all_exports(tmp_path):
     assert not result.province_summary.empty
     assert len(result.hub_summary) == 3
     assert len(build_geojson(result.route_results)["features"]) == 2
+    map_path = tmp_path / "route_map.html"
+    save_map(result.route_results, result.metadata["hubs"], settings, map_path)
+    map_html = map_path.read_text(encoding="utf-8")
+    assert "tile.openstreetmap.org" not in map_html
+    assert "basemaps.cartocdn.com" not in map_html
+    assert "Thailand" in map_html
+    assert "#dceef4" in map_html
+    assert '"maxZoom": 19' in map_html
+    assert "Rayong" in map_html
     output = tmp_path / "route_results.xlsx"
     export_analysis_excel(result, output)
     book = load_workbook(output, read_only=True)

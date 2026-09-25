@@ -1,4 +1,5 @@
 import type { RouteFeature } from "./types";
+import southeastAsiaOutline from "../../data/southeast_asia_outline.json";
 
 const htmlDocumentTitle = (value: string) => value.replace(/[&<>"']/g, (character) => ({
   "&": "&amp;",
@@ -19,6 +20,7 @@ const scriptSafeJson = (value: unknown) => JSON.stringify(value)
 export function routeFeaturesToHtml(features: RouteFeature[], title = "Thailand Route Intelligence"): string {
   if (!features.length) throw new Error("ไม่มีเส้นทางสำหรับส่งออก HTML");
   const featureData = scriptSafeJson(features);
+  const outlineData = scriptSafeJson(southeastAsiaOutline);
   const safeTitle = htmlDocumentTitle(title);
 
   return `<!doctype html>
@@ -30,6 +32,7 @@ export function routeFeaturesToHtml(features: RouteFeature[], title = "Thailand 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <style>
     html, body, #map { height: 100%; margin: 0; }
+    #map { background: #dceef4; }
     body { font-family: "Segoe UI", Tahoma, sans-serif; color: #172554; }
     .summary { position: fixed; z-index: 1000; top: 16px; left: 52px; max-width: 340px; padding: 12px 16px; border: 1px solid #bfdbfe; border-radius: 12px; background: rgba(255,255,255,.94); box-shadow: 0 8px 24px rgba(15,23,42,.16); }
     .summary b, .summary span { display: block; }
@@ -53,9 +56,9 @@ export function routeFeaturesToHtml(features: RouteFeature[], title = "Thailand 
     const colorFor = (region) => colors[Math.max(regions.indexOf(region), 0) % colors.length];
     const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
     const map = L.map("map", { preferCanvas: true });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors",
+    L.geoJSON(${outlineData}, {
+      style: (feature) => ({ color: "#8da3b1", weight: 1, fillColor: feature?.properties?.name === "Thailand" ? "#e6eee3" : "#f0f2ed", fillOpacity: 1 }),
+      interactive: false,
     }).addTo(map);
     const bounds = [];
     const hubs = new Map();

@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 from collections import defaultdict
+from pathlib import Path
 
 import pandas as pd
 
@@ -34,7 +35,22 @@ def build_map(results: pd.DataFrame, hubs: pd.DataFrame, settings: Settings):
     import folium
     from folium.plugins import MarkerCluster
 
-    fmap = folium.Map(location=list(settings.default_map_center), zoom_start=settings.default_zoom, control_scale=True, tiles="OpenStreetMap")
+    # Embed a regional outline so exported maps do not depend on tile servers.
+    fmap = folium.Map(location=list(settings.default_map_center), zoom_start=settings.default_zoom, max_zoom=19, control_scale=True, tiles=None)
+    fmap.get_root().header.add_child(folium.Element('<style>.leaflet-container { background: #dceef4; }</style>'))
+    outline_path = Path(__file__).resolve().parents[1] / "data" / "southeast_asia_outline.json"
+    outline = json.loads(outline_path.read_text(encoding="utf-8"))
+    folium.GeoJson(
+        outline,
+        name="Country outlines",
+        style_function=lambda feature: {
+            "color": "#8da3b1",
+            "weight": 1,
+            "fillColor": "#e6eee3" if feature["properties"]["name"] == "Thailand" else "#f0f2ed",
+            "fillOpacity": 1,
+        },
+        control=False,
+    ).add_to(fmap)
     branches_layer = folium.FeatureGroup(name="Branches", show=True)
     hubs_layer = folium.FeatureGroup(name="Regional Hubs", show=True)
     routes_layer = folium.FeatureGroup(name="All Routes", show=True)
