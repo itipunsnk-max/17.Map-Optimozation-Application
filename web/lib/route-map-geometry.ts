@@ -1,4 +1,5 @@
 import southeastAsiaOutline from "../data/southeast_asia_outline.json";
+import thailandProvinces from "../data/thailand_provinces.json";
 import type { Position } from "./types";
 
 export const MAP_WIDTH = 1600;
@@ -17,6 +18,14 @@ export const countryOutlines = southeastAsiaOutline.features.flatMap((feature) =
     ? [geometry.coordinates as Position[][]]
     : geometry.coordinates as Position[][][];
   return polygons.map((rings) => ({ name: feature.properties.name, rings }));
+});
+
+export const provinceOutlines = thailandProvinces.map((feature) => {
+  const geometry = feature.geometry as CountryGeometry;
+  const polygons = geometry.type === "Polygon"
+    ? [geometry.coordinates as Position[][]]
+    : geometry.coordinates as Position[][][];
+  return { name: feature.name, code: feature.code, polygons };
 });
 
 export function projectCoordinate([longitude, latitude]: Position): [number, number] {

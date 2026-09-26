@@ -1,5 +1,5 @@
 import type { RouteFeature } from "./types";
-import { countryOutlines, MAP_HEIGHT, MAP_WIDTH, pathForCoordinates, pathForCountry, projectCoordinate } from "./route-map-geometry";
+import { countryOutlines, MAP_HEIGHT, MAP_WIDTH, pathForCoordinates, pathForCountry, projectCoordinate, provinceOutlines } from "./route-map-geometry";
 
 const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -19,9 +19,19 @@ export function routeFeaturesToHtml(features: RouteFeature[], title = "Thailand 
   if (!features.length) throw new Error("ไม่มีเส้นทางสำหรับส่งออก HTML");
   const regions = [...new Set(features.map((feature) => feature.properties.Region))];
   const colorFor = (region: string) => PALETTE[Math.max(regions.indexOf(region), 0) % PALETTE.length];
-  const countries = countryOutlines.map((country) =>
-    `<path class="country" data-country="${escapeHtml(country.name)}" d="${pathForCountry(country.rings)}" fill="${country.name === "Thailand" ? "#e6eee3" : "#f0f2ed"}" />`,
+  const countries = countryOutlines.filter((country) => country.name !== "Thailand").map((country) =>
+    `<path class="country" data-country="${escapeHtml(country.name)}" d="${pathForCountry(country.rings)}" />`,
   ).join("\n    ");
+  const provinces = provinceOutlines.map((province) =>
+    `<path class="province" data-province="${escapeHtml(province.name)}" d="${province.polygons.map(pathForCountry).join(" ")}"><title>${escapeHtml(province.name)} · ${escapeHtml(province.code)}</title></path>`,
+  ).join("\n    ");
+  const graticule = [96, 100, 104, 108].map((longitude) => {
+    const [x] = projectCoordinate([longitude, 13.5]);
+    return `<line x1="${x}" y1="0" x2="${x}" y2="${MAP_HEIGHT}" />`;
+  }).concat([6, 10, 14, 18, 22].map((latitude) => {
+    const [, y] = projectCoordinate([101, latitude]);
+    return `<line x1="0" y1="${y}" x2="${MAP_WIDTH}" y2="${y}" />`;
+  })).join("\n    ");
   const routes = features.map((feature, index) => {
     const coordinates = feature.geometry.coordinates;
     if (!coordinates.length) return "";
@@ -36,13 +46,20 @@ export function routeFeaturesToHtml(features: RouteFeature[], title = "Thailand 
       <title>${escapeHtml(feature.properties.Branch_Name)} → ${escapeHtml(feature.properties.Hub_Name)} · ${distance}</title>
     </g>`;
   }).join("\n    ");
-  const hubs = new Map<string, { point: [number, number]; name: string }>();
+  const hubs = new Map<string, { point: [number, number]; name: string; color: string; count: number }>();
   for (const feature of features) {
     const endpoint = feature.geometry.coordinates.at(-1);
-    if (endpoint) hubs.set(feature.properties.Hub_ID, { point: projectCoordinate(endpoint), name: feature.properties.Hub_Name });
+    if (!endpoint) continue;
+    const existing = hubs.get(feature.properties.Hub_ID);
+    if (existing) existing.count += 1;
+    else hubs.set(feature.properties.Hub_ID, { point: projectCoordinate(endpoint), name: feature.properties.Hub_Name, color: colorFor(feature.properties.Region), count: 1 });
   }
-  const hubMarkers = [...hubs.values()].map(({ point: [x, y], name }) =>
-    `<g class="hub-marker"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="12" /><title>${escapeHtml(name)}</title></g>`,
+  const hubList = [...hubs.values()].sort((left, right) => left.name.localeCompare(right.name));
+  const hubMarkers = hubList.map(({ point: [x, y], name, color }, index) =>
+    `<g class="hub-marker"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="12" stroke="${color}" /><text x="${x.toFixed(1)}" y="${(y + 4.5).toFixed(1)}">${index + 1}</text><title>${escapeHtml(name)}</title></g>`,
+  ).join("\n    ");
+  const hubItems = hubList.map((hub, index) =>
+    `<li><i style="border-color:${hub.color}">${index + 1}</i><span>${escapeHtml(hub.name)}<small>${hub.count} assigned ${hub.count === 1 ? "route" : "routes"}</small></span></li>`,
   ).join("\n    ");
 
   return `<!doctype html>
@@ -55,16 +72,27 @@ export function routeFeaturesToHtml(features: RouteFeature[], title = "Thailand 
     html, body { width: 100%; height: 100%; margin: 0; }
     body { overflow: hidden; font-family: "Segoe UI", Tahoma, sans-serif; color: #172554; background: #dceef4; }
     svg { display: block; width: 100%; height: 100%; touch-action: none; }
-    .country { stroke: #8da3b1; stroke-width: 1.5; }
+    .graticule line { stroke: #46708a; stroke-opacity: .12; stroke-width: 1; }
+    .country { fill: #f0f2ed; stroke: #a5b5b8; stroke-width: 1.2; }
+    .province { fill: #e6eee3; fill-rule: evenodd; stroke: #a4b7b1; stroke-width: .9; }
+    .province:hover { fill: #d8e9db; stroke: #6b968a; stroke-width: 1.5; }
     .route-item { cursor: pointer; }
     .route-line { fill: none; stroke-width: 5; stroke-opacity: .85; pointer-events: stroke; }
     .route-item:hover .route-line { stroke-width: 9; }
     .branch { stroke: #fff; stroke-width: 2.5; }
-    .hub-marker circle { fill: #ecfdf5; stroke: #062d2c; stroke-width: 4; }
+    .hub-marker circle { fill: #fff; stroke-width: 4; }
+    .hub-marker text { fill: #1e3a8a; font: 800 14px "Segoe UI", sans-serif; text-anchor: middle; pointer-events: none; }
     .summary, .details, .controls { position: fixed; z-index: 2; background: rgba(255,255,255,.96); border: 1px solid #bfdbfe; border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,.16); }
     .summary { top: 16px; left: 16px; max-width: 340px; padding: 12px 16px; }
+    .summary small { display: block; margin-bottom: 4px; color: #2563eb; font-size: 10px; font-weight: 800; letter-spacing: .15em; }
     .summary b, .summary span { display: block; }
     .summary span { margin-top: 3px; color: #64748b; font-size: 12px; }
+    .hub-list { position: fixed; top: 150px; right: 16px; z-index: 2; width: 256px; padding: 16px; border: 1px solid #bfdbfe; border-radius: 12px; background: rgba(255,255,255,.94); box-shadow: 0 8px 24px rgba(15,23,42,.12); }
+    .hub-list h2 { margin: 0 0 12px; color: #2563eb; font-size: 10px; letter-spacing: .15em; }
+    .hub-list ul { margin: 0; padding: 0; list-style: none; }
+    .hub-list li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid #e8eef5; color: #1e3a8a; font-size: 11px; font-weight: 700; }
+    .hub-list li i { width: 23px; height: 23px; flex: none; display: grid; place-items: center; border: 2px solid; border-radius: 50%; background: #fff; font-size: 10px; font-style: normal; }
+    .hub-list li small { display: block; margin-top: 2px; color: #64748b; font-size: 9px; font-weight: 400; }
     .controls { top: 16px; right: 16px; display: flex; gap: 4px; padding: 5px; }
     .controls button { width: 36px; height: 36px; border: 0; border-radius: 8px; background: #eff6ff; color: #172554; cursor: pointer; font-size: 20px; }
     .details { left: 16px; bottom: 16px; width: min(360px, calc(100vw - 64px)); padding: 15px; }
@@ -75,20 +103,33 @@ export function routeFeaturesToHtml(features: RouteFeature[], title = "Thailand 
     .details dd { margin: 0; text-align: right; font-weight: 600; }
     .details a { color: #0f766e; font-weight: 700; }
     .close { float: right; border: 0; background: none; font-size: 20px; cursor: pointer; }
-    .source { position: fixed; right: 12px; bottom: 8px; color: #475569; font-size: 11px; }
+    .north { position: fixed; top: 82px; right: 22px; z-index: 2; color: #28546f; font-size: 12px; font-weight: 800; text-align: center; }
+    .north b { display: block; font-size: 24px; line-height: 1; }
+    .legend { position: fixed; left: 16px; bottom: 16px; z-index: 2; padding: 9px 12px; border: 1px solid #bfdbfe; border-radius: 10px; background: rgba(255,255,255,.94); color: #475569; font-size: 11px; }
+    .legend i { color: #2563eb; font-style: normal; font-weight: 900; }
+    .source { position: fixed; right: 12px; bottom: 8px; color: #475569; font-size: 10px; }
+    .details:not([hidden]) + .legend { display: none; }
+    @media (max-width: 750px) { .hub-list { display: none; } .summary { max-width: 210px; } }
   </style>
 </head>
 <body>
-  <div class="summary"><b>${escapeHtml(title)}</b><span>${features.length.toLocaleString("th-TH")} เส้นทาง · คลิกเส้นหรือจุดสาขาเพื่อดูระยะทาง</span></div>
+  <div class="summary"><small>THAILAND · PROVINCIAL NETWORK</small><b>${escapeHtml(title)}</b><span>77 จังหวัด · ${features.length.toLocaleString("th-TH")} เส้นทาง · คลิกเส้นเพื่อดูระยะทาง</span></div>
   <div class="controls"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button><button id="reset" aria-label="Reset view">⌂</button></div>
-  <svg id="map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MAP_WIDTH} ${MAP_HEIGHT}" role="img" aria-label="แผนที่ประเทศไทยและเส้นทางสาขา">
+  <div class="north">N<b>↑</b></div>
+  <aside class="hub-list"><h2>REGIONAL HUBS · ${hubList.length}</h2><ul>${hubItems}</ul></aside>
+  <svg id="map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MAP_WIDTH} ${MAP_HEIGHT}" role="img" aria-labelledby="route-atlas-title route-atlas-desc">
+    <title id="route-atlas-title">Thailand provincial route map</title>
+    <desc id="route-atlas-desc">77 provincial boundaries, branch routes, and regional hubs in Thailand.</desc>
     <rect width="${MAP_WIDTH}" height="${MAP_HEIGHT}" fill="#dceef4" />
+    <g class="graticule">${graticule}</g>
     ${countries}
+    <g data-country="Thailand">${provinces}</g>
     ${routes}
     ${hubMarkers}
   </svg>
   <section class="details" id="details" hidden><button class="close" id="close" aria-label="Close">×</button><h2 id="route-title"></h2><dl id="route-fields"></dl><a id="directions" target="_blank" rel="noopener noreferrer">เปิดเส้นทางใน Google Maps ↗</a></section>
-  <span class="source">Country outlines: Natural Earth · Route geometry: current dataset</span>
+  <div class="legend"><i>●</i> Branch &nbsp; <i>◎</i> Regional Hub &nbsp; <i>━</i> Assigned route</div>
+  <span class="source">Provinces © OpenStreetMap contributors / geoBoundaries (ODbL) · Neighbors: Natural Earth</span>
   <script>
     const features = ${scriptSafeJson(features)};
     const svg = document.getElementById("map");

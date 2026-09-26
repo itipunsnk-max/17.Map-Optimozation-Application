@@ -7,6 +7,7 @@ const { analyzeInputWorkbook, routeDistanceCeiling } = require("../node_modules/
 const { routeFeaturesToHtml } = require("../node_modules/.cache/route-tests/web/lib/route-html-export.js");
 const { buildRouteWorkbook } = require("../node_modules/.cache/route-tests/web/lib/route-workbook-export.js");
 const { routeMapToPng } = require("../node_modules/.cache/route-tests/web/lib/route-map-export.js");
+const { provinceOutlines } = require("../node_modules/.cache/route-tests/web/lib/route-map-geometry.js");
 
 const branches = [
   { Branch_ID: "B01", Branch_Name: "Bangkok", Province: "Bangkok", Latitude: 13.7563, Longitude: 100.5018 },
@@ -58,6 +59,8 @@ test("exports a standalone HTML map with route-distance details", () => {
   assert.match(html, /google\.com\/maps\/dir/);
   assert.match(html, /B01/);
   assert.match(html, /data-country="Thailand"/);
+  assert.equal(provinceOutlines.length, 77);
+  assert.equal((html.match(/data-province=/g) ?? []).length, 77);
   assert.match(html, /<svg[\s>]/);
   assert.doesNotMatch(html, /<(?:script|link)[^>]+(?:src|href)="https?:/i);
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
@@ -83,6 +86,7 @@ test("Excel map image draws a geographic Thailand outline behind the routes", ()
     const { dataset } = analyzeInputWorkbook(branches, hubs);
     assert.match(routeMapToPng(dataset.features), /^data:image\/png/);
     assert.ok(calls.some(([name, value]) => name === "fillStyle" && value === "#e6eee3"), "Thailand land fill is missing");
+    assert.ok(calls.filter(([name, value]) => name === "fillStyle" && value === "#e6eee3").length >= 77, "provincial fills are missing");
     assert.ok(calls.some(([name]) => name === "closePath"), "geographic outline is missing");
   } finally {
     global.document = previousDocument;
