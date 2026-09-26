@@ -1,10 +1,12 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const vm = require("node:vm");
 const ExcelJS = require("exceljs");
 
-const { analyzeInputWorkbook, routeDistanceCeiling } = require("../node_modules/.cache/route-tests/lib/geojson.js");
-const { routeFeaturesToHtml } = require("../node_modules/.cache/route-tests/lib/route-html-export.js");
-const { buildRouteWorkbook } = require("../node_modules/.cache/route-tests/lib/route-workbook-export.js");
+const { analyzeInputWorkbook, routeDistanceCeiling } = require("../node_modules/.cache/route-tests/web/lib/geojson.js");
+const { routeFeaturesToHtml } = require("../node_modules/.cache/route-tests/web/lib/route-html-export.js");
+const { buildRouteWorkbook } = require("../node_modules/.cache/route-tests/web/lib/route-workbook-export.js");
+const { routeMapToPng } = require("../node_modules/.cache/route-tests/web/lib/route-map-export.js");
 
 const branches = [
   { Branch_ID: "B01", Branch_Name: "Bangkok", Province: "Bangkok", Latitude: 13.7563, Longitude: 100.5018 },
@@ -47,15 +49,44 @@ test("expands the distance filter ceiling so imported routes are not hidden", ()
   assert.equal(routeDistanceCeiling(dataset.features), 650);
 });
 
-test("exports an interactive HTML map with route-distance tooltips", () => {
+test("exports a standalone HTML map with route-distance details", () => {
   const { dataset } = analyzeInputWorkbook(branches, hubs);
   const html = routeFeaturesToHtml(dataset.features, "Fixture routes");
   assert.match(html, /<!doctype html>/i);
-  assert.match(html, /leaflet/i);
-  assert.match(html, /bindTooltip/);
+  assert.match(html, /class="route-line"/);
   assert.match(html, /Distance/);
   assert.match(html, /google\.com\/maps\/dir/);
   assert.match(html, /B01/);
+  assert.match(html, /data-country="Thailand"/);
+  assert.match(html, /<svg[\s>]/);
+  assert.doesNotMatch(html, /<(?:script|link)[^>]+(?:src|href)="https?:/i);
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script);
+  assert.doesNotThrow(() => new vm.Script(script));
+});
+
+test("Excel map image draws a geographic Thailand outline behind the routes", () => {
+  const calls = [];
+  const context = new Proxy({}, {
+    get(_target, name) {
+      if (name === "createLinearGradient") return () => ({ addColorStop() {} });
+      if (["beginPath", "moveTo", "lineTo", "closePath", "fill", "stroke", "fillRect", "fillText", "arc"].includes(name)) {
+        return (...args) => calls.push([name, ...args]);
+      }
+      return undefined;
+    },
+    set(_target, name, value) { calls.push([name, value]); return true; },
+  });
+  const previousDocument = global.document;
+  global.document = { createElement: () => ({ width: 0, height: 0, getContext: () => context, toDataURL: () => "data:image/png;base64,fixture" }) };
+  try {
+    const { dataset } = analyzeInputWorkbook(branches, hubs);
+    assert.match(routeMapToPng(dataset.features), /^data:image\/png/);
+    assert.ok(calls.some(([name, value]) => name === "fillStyle" && value === "#e6eee3"), "Thailand land fill is missing");
+    assert.ok(calls.some(([name]) => name === "closePath"), "geographic outline is missing");
+  } finally {
+    global.document = previousDocument;
+  }
 });
 
 test("creates Excel with Route_Map as the first sheet and an embedded map", async () => {

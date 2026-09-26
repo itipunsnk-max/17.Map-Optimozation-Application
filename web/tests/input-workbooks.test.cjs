@@ -3,8 +3,8 @@ const path = require("node:path");
 const test = require("node:test");
 const XLSX = require("xlsx");
 
-const { analyzeInputWorkbook } = require("../node_modules/.cache/route-tests/lib/geojson.js");
-const { provinceReference } = require("../node_modules/.cache/route-tests/lib/province-reference.js");
+const { analyzeInputWorkbook } = require("../node_modules/.cache/route-tests/web/lib/geojson.js");
+const { provinceReference } = require("../node_modules/.cache/route-tests/web/lib/province-reference.js");
 const inputDirectory = process.env.ROUTE_INPUT_DIR
   ? path.resolve(process.env.ROUTE_INPUT_DIR)
   : path.join(__dirname, "..", "..", "input");

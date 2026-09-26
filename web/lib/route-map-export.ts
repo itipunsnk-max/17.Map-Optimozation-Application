@@ -1,39 +1,39 @@
 import type { RouteFeature } from "./types";
+import { countryOutlines, MAP_HEIGHT, MAP_WIDTH, projectCoordinate } from "./route-map-geometry";
 
 const PALETTE = ["#2563eb", "#7c3aed", "#0891b2", "#db2777", "#ea580c", "#0f766e", "#4f46e5"];
 
 /** Render an offline-safe route overview for embedding in an Excel workbook. */
 export function routeMapToPng(features: RouteFeature[]): string {
   const canvas = document.createElement("canvas");
-  canvas.width = 1600;
-  canvas.height = 900;
+  canvas.width = MAP_WIDTH;
+  canvas.height = MAP_HEIGHT;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("ไม่สามารถสร้างภาพแผนที่สำหรับ Excel ได้");
 
-  const coordinates = features.flatMap((feature) => feature.geometry.coordinates);
-  const longitudes = coordinates.map(([longitude]) => longitude);
-  const latitudes = coordinates.map(([, latitude]) => latitude);
-  const minimumLongitude = Math.min(...longitudes);
-  const maximumLongitude = Math.max(...longitudes);
-  const minimumLatitude = Math.min(...latitudes);
-  const maximumLatitude = Math.max(...latitudes);
-  const padding = 130;
-  const longitudeRange = Math.max(maximumLongitude - minimumLongitude, 1);
-  const latitudeRange = Math.max(maximumLatitude - minimumLatitude, 1);
-  const scale = Math.min((canvas.width - padding * 2) / longitudeRange, (canvas.height - padding * 2) / latitudeRange);
-  const offsetX = (canvas.width - longitudeRange * scale) / 2 - minimumLongitude * scale;
-  const offsetY = (canvas.height - latitudeRange * scale) / 2 + maximumLatitude * scale;
-  const point = ([longitude, latitude]: [number, number]) => [offsetX + longitude * scale, offsetY - latitude * scale] as [number, number];
+  const point = projectCoordinate;
 
-  const background = context.createLinearGradient(0, 0, canvas.width, canvas.height);
-  background.addColorStop(0, "#eff6ff");
-  background.addColorStop(1, "#dbeafe");
-  context.fillStyle = background;
+  context.fillStyle = "#dceef4";
   context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = "rgba(37, 99, 235, .12)";
-  context.lineWidth = 1;
-  for (let grid = 0; grid < canvas.width; grid += 80) { context.beginPath(); context.moveTo(grid, 0); context.lineTo(grid, canvas.height); context.stroke(); }
-  for (let grid = 0; grid < canvas.height; grid += 80) { context.beginPath(); context.moveTo(0, grid); context.lineTo(canvas.width, grid); context.stroke(); }
+  for (const country of countryOutlines) {
+    context.beginPath();
+    for (const ring of country.rings) {
+      ring.forEach((coordinate, index) => {
+        const [x, y] = point(coordinate);
+        if (index) context.lineTo(x, y);
+        else context.moveTo(x, y);
+      });
+      context.closePath();
+    }
+    context.fillStyle = country.name === "Thailand" ? "#e6eee3" : "#f0f2ed";
+    context.fill();
+    context.strokeStyle = "#8da3b1";
+    context.lineWidth = 1.5;
+    context.stroke();
+  }
+
+  context.fillStyle = "rgba(255,255,255,.86)";
+  context.fillRect(48, 20, 520, 108);
 
   context.fillStyle = "#172554";
   context.font = "600 38px Segoe UI, sans-serif";
@@ -62,9 +62,14 @@ export function routeMapToPng(features: RouteFeature[]): string {
     context.beginPath(); context.arc(start[0], start[1], 9, 0, Math.PI * 2); context.fillStyle = colorFor(feature.properties.Region); context.fill(); context.strokeStyle = "#ffffff"; context.lineWidth = 3; context.stroke();
     hubs.set(feature.properties.Hub_ID, { point: end, name: feature.properties.Hub_Name, color: colorFor(feature.properties.Region) });
   }
+  const labelPositions: Array<[number, number]> = [];
   for (const hub of hubs.values()) {
     context.beginPath(); context.arc(hub.point[0], hub.point[1], 15, 0, Math.PI * 2); context.fillStyle = "#ffffff"; context.fill(); context.strokeStyle = hub.color; context.lineWidth = 6; context.stroke();
-    context.fillStyle = "#172554"; context.font = "600 18px Segoe UI, sans-serif"; context.fillText(hub.name, hub.point[0] + 22, hub.point[1] + 6);
+    const labelX = hub.point[0] + 22;
+    let labelY = hub.point[1] + 6;
+    while (labelPositions.some(([x, y]) => Math.abs(x - labelX) < 300 && Math.abs(y - labelY) < 24)) labelY += 26;
+    labelPositions.push([labelX, labelY]);
+    context.fillStyle = "#172554"; context.font = "600 18px Segoe UI, sans-serif"; context.fillText(hub.name, labelX, labelY);
   }
 
   context.fillStyle = "rgba(255,255,255,.9)";
